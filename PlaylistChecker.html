@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playlist Checker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        .scrollable-results {
+            max-height: 500px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .scrollable-results::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scrollable-results::-webkit-scrollbar-thumb {
+            background-color: #d1d5db;
+            border-radius: 4px;
+        }
+        .scrollable-results::-webkit-scrollbar-track {
+            background-color: #f3f4f6;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0,0,0);
+            background-color: rgba(0,0,0,0.4);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 24px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 600px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .copy-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1001;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .copy-message.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
+        <h1 class="text-3xl font-bold mb-6 text-center text-gray-800">Playlist Checker</h1>
+        <p class="text-sm text-gray-600 mb-6 text-left">
+            Paste your M3U links or Xtream data below. Paste in as many as you want at a time.
+            <br><br>
+            This tool will intelligently check the status of each M3U or Xtream code you paste in, and will filter your input to only display currently working playlists.
+            <br><br>
+            It will tell you the maximum number of connections allowed at a time, as well as how many current connections there are. It will also tell you the expiry date of the playlist.
+            <br><br>
+            You can paste in messy text without first cleaning it up. The tool will parse it for you.
+        </p>
+
+        <textarea
+            id="linksInput"
+            rows="10"
+            class="w-full p-4 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 resize-y"
+            placeholder="Paste your M3U or Xtream data here. The tool will automatically detect the format and check the status of each playlist."
+        ></textarea>
+        
+        <div class="flex flex-col sm:flex-row items-center justify-center my-6 gap-4">
+            <div class="flex items-center gap-2">
+                <label for="minConnectionsInput" class="text-gray-700 font-semibold">Minimum of Allowed Simultaneous Connections:</label>
+                <select id="minConnectionsInput" class="p-2 border border-gray-300 rounded-lg">
+                    <option value="1">1+</option>
+                    <option value="2">2+</option>
+                    <option value="3">3+</option>
+                    <option value="4">4+</option>
+                    <option value="5">5+</option>
+                    <option value="50">50+</option>
+                </select>
+            </div>
+            <button
+                id="processButton"
+                class="bg-blue-600 text-white font-semibold py-3 px-8 rounded-full shadow-md hover:bg-blue-700 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+                Start Checking
+            </button>
+            <button
+                id="stopButton"
+                class="bg-red-600 text-white font-semibold py-3 px-8 rounded-full shadow-md hover:bg-red-700 transition duration-300 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 hidden"
+            >
+                Stop
+            </button>
+            <button
+                id="clearButton"
+                class="bg-gray-400 text-white font-semibold py-3 px-8 rounded-full shadow-md hover:bg-gray-500 transition duration-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 hidden"
+            >
+                Clear
+            </button>
+            <button
+                id="viewFailedButton"
+                class="bg-red-500 text-white font-semibold py-2 px-4 rounded-full text-sm shadow-md hover:bg-red-600 transition duration-300 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 hidden"
+            >
+                View Failed Links
+            </button>
+        </div>
+        
+        <div id="loading" class="text-center text-gray-500 font-medium hidden">
+            <p id="loading-text">Processing links...</p>
+        </div>
+
+        <div id="results" class="mt-6 border border-gray-200 rounded-lg p-4 bg-gray-50 shadow-inner hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-700">Working Playlists</h2>
+            </div>
+            <div class="scrollable-results">
+                <ul id="resultsList" class="list-none space-y-2 text-sm text-gray-700 break-all"></ul>
+            </div>
+        </div>
+        
+        <div id="messageBox" class="mt-4 p-4 rounded-lg text-center font-medium hidden"></div>
+    </div>
+
+    <div id="failureModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Failed & Timed Out Playlists</h2>
+            <div class="scrollable-results">
+                <ul id="failedResultsList" class="list-none space-y-2 text-sm text-gray-700 break-all"></ul>
+            </div>
+        </div>
+    </div>
+
+    <div id="copyMessage" class="copy-message"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const linksInput = document.getElementById('linksInput');
+            const minConnectionsInput = document.getElementById('minConnectionsInput');
+            const processButton = document.getElementById('processButton');
+            const stopButton = document.getElementById('stopButton');
+            const clearButton = document.getElementById('clearButton');
+            const viewFailedButton = document.getElementById('viewFailedButton');
+            const resultsDiv = document.getElementById('results');
+            const resultsList = document.getElementById('resultsList');
+            const loadingIndicator = document.getElementById('loading');
+            const loadingText = document.getElementById('loading-text');
+            const messageBox = document.getElementById('messageBox');
+            const failureModal = document.getElementById('failureModal');
+            const failedResultsList = document.getElementById('failedResultsList');
+            const closeButton = document.querySelector('.close-button');
+            const copyMessage = document.getElementById('copyMessage');
+
+            let abortController = null;
+            let totalLinks = 0;
+            let processedLinks = 0;
+            let failedLinks = [];
+
+            const showMessage = (message, classes) => {
+                messageBox.textContent = message;
+                messageBox.className = `mt-4 p-4 rounded-lg text-center font-medium ${classes} ${message ? '' : 'hidden'}`;
+            };
+
+            const showCopyMessage = (message) => {
+                copyMessage.textContent = message;
+                copyMessage.classList.add('show');
+                setTimeout(() => {
+                    copyMessage.classList.remove('show');
+                }, 2000);
+            };
+
+            const updateLoadingText = () => {
+                loadingText.textContent = `Processing links... (${processedLinks} of ${totalLinks} checked)`;
+            };
+
+            const showResult = (link, message) => {
+                const li = document.createElement('li');
+                li.classList.add('p-2', 'rounded-lg', 'break-all', 'cursor-pointer', 'hover:bg-gray-100');
+                li.setAttribute('data-link', link);
+                
+                li.innerHTML = `${link} <br><span class="text-gray-500 text-xs ml-2">${message}</span>`;
+                resultsList.appendChild(li);
+            };
+
+            const showFailedResult = (link, message) => {
+                const li = document.createElement('li');
+                li.classList.add('p-2', 'rounded-lg', 'break-all');
+                li.innerHTML = `<span class="font-bold uppercase bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs mr-2">FAILED</span> ${link} <br><span class="text-gray-500 text-xs ml-2">${message}</span>`;
+                failedResultsList.appendChild(li);
+            };
+
+            resultsList.addEventListener('click', (event) => {
+                const listItem = event.target.closest('li');
+                if (listItem) {
+                    const linkToCopy = listItem.getAttribute('data-link');
+                    if (linkToCopy) {
+                        navigator.clipboard.writeText(linkToCopy).then(() => {
+                            showCopyMessage('Link copied to clipboard!');
+                        }).catch(err => {
+                            console.error('Could not copy text: ', err);
+                            showCopyMessage('Failed to copy link.');
+                        });
+                    }
+                }
+            });
+
+            processButton.addEventListener('click', async () => {
+                const rawInput = linksInput.value.trim();
+                if (!rawInput) {
+                    showMessage('Please enter at least one link or a set of Xtream data.', 'bg-red-100 text-red-700 border border-red-200');
+                    return;
+                }
+
+                let linksToProcess = [];
+                const isM3u = rawInput.includes('m3u_plus') || rawInput.includes('get.php');
+                const lines = rawInput.split('\n');
+
+                if (isM3u) {
+                    linksToProcess = lines.map(line => line.trim())
+                                             .filter(line => line.includes('http') && (line.includes('m3u_plus') || line.includes('get.php')))
+                                             .map(line => {
+                                                const match = line.match(/(https?:\/\/[^\s]+)/);
+                                                const originalLink = match ? match[1] : null;
+                                                if (originalLink) {
+                                                    const apiLink = originalLink.replace('/get.php?', '/player_api.php?');
+                                                    return { originalLink, apiLink };
+                                                }
+                                                return null;
+                                             })
+                                             .filter(link => link);
+                    if (linksToProcess.length === 0) {
+                        showMessage('No valid M3U links found in the input.', 'bg-red-100 text-red-700 border border-red-200');
+                        return;
+                    }
+                } else { // Assume Xtream data
+                    let currentHost = null;
+                    let currentUser = null;
+                    let currentPass = null;
+
+                    lines.forEach(line => {
+                        const hostMatch = line.match(/(http[s]?:\/\/[^\s]+)/);
+                        const userMatch = line.match(/Us[ᴇᴇ]ʀ[➢-]\s*([^\s]+)/i);
+                        const passMatch = line.match(/P[ᴀa]ss[➢-]\s*([^\s]+)/i);
+                        
+                        if (hostMatch) {
+                            if (currentHost && currentUser && currentPass) {
+                                const apiLink = `${currentHost}/player_api.php?username=${currentUser}&password=${currentPass}`;
+                                linksToProcess.push({ originalLink: currentHost, apiLink });
+                            }
+                            currentHost = hostMatch[1];
+                            if (currentHost.includes('/get.php')) {
+                                currentHost = currentHost.substring(0, currentHost.indexOf('/get.php'));
+                            }
+                            currentUser = null;
+                            currentPass = null;
+                        } else if (userMatch) {
+                            currentUser = userMatch[1];
+                        } else if (passMatch) {
+                            currentPass = passMatch[1];
+                        }
+                    });
+
+                    if (currentHost && currentUser && currentPass) {
+                        const apiLink = `${currentHost}/player_api.php?username=${currentUser}&password=${currentPass}`;
+                        linksToProcess.push({ originalLink: currentHost, apiLink });
+                    }
+
+                    if (linksToProcess.length === 0) {
+                        showMessage('No valid Xtream data found. Please ensure each block contains a Host, User, and Pass.', 'bg-red-100 text-red-700 border border-red-200');
+                        return;
+                    }
+                }
+
+                processButton.classList.add('hidden');
+                stopButton.classList.remove('hidden');
+                clearButton.classList.add('hidden');
+                loadingIndicator.classList.remove('hidden');
+                updateLoadingText();
+
+                setTimeout(async () => {
+                    totalLinks = linksToProcess.length;
+                    processedLinks = 0;
+                    resultsList.innerHTML = '';
+                    failedResultsList.innerHTML = '';
+                    failedLinks = [];
+                    resultsDiv.classList.add('hidden');
+                    viewFailedButton.classList.add('hidden');
+                    showMessage('', '');
+                    updateLoadingText();
+
+                    abortController = new AbortController();
+                    const timeout = 10000;
+                    const minConnections = parseInt(minConnectionsInput.value, 10);
+
+                    const checkLink = async ({ originalLink, apiLink }) => {
+                        const id = setTimeout(() => {
+                            if (abortController && !abortController.signal.aborted) {
+                                abortController.abort();
+                            }
+                        }, timeout);
+                        
+                        try {
+                            const response = await fetch(apiLink, { signal: abortController.signal });
+                            clearTimeout(id);
+                            
+                            if (response.ok) {
+                                const data = await response.json();
+                                const maxConnections = data.user_info ? parseInt(data.user_info.max_connections, 10) : NaN;
+                                const activeConnections = data.user_info ? parseInt(data.user_info.active_cons, 10) : NaN;
+                                
+                                if (!isNaN(maxConnections) && maxConnections >= minConnections) {
+                                    const expDate = data.user_info ? parseInt(data.user_info.exp_date, 10) : NaN;
+                                    const remainingTimeString = formatRemainingTime(expDate);
+                                    return { status: 'Working', originalLink, message: `Current Connections: ${activeConnections} | Allowed Connections: ${maxConnections === Infinity ? 'Unlimited' : maxConnections} | Expires: ${remainingTimeString}` };
+                                } else {
+                                    return { status: 'Failed', originalLink, message: `Connections (${maxConnections === Infinity ? 'Unlimited' : maxConnections}) did not meet criteria of ${minConnections}` };
+                                }
+                            } else {
+                                throw new Error(`HTTP error! Status: ${response.status}`);
+                            }
+                        } catch (error) {
+                            clearTimeout(id);
+                            if (error.name === 'AbortError') {
+                                return { status: 'Timed Out', originalLink, message: `Request timed out after ${timeout / 1000}s.` };
+                            }
+                            if (error.message.includes('Failed to fetch')) {
+                                return { status: 'Failed', originalLink, message: 'Potential CORS/API Error' };
+                            }
+                            return { status: 'Failed', originalLink, message: `Error: ${error.message}` };
+                        } finally {
+                            processedLinks++;
+                            updateLoadingText();
+                        }
+                    };
+
+                    const linkPromises = linksToProcess.map(link => checkLink(link));
+                    const results = await Promise.allSettled(linkPromises);
+
+                    results.forEach(result => {
+                        if (result.status === 'fulfilled') {
+                            if (result.value.status === 'Working') {
+                                showResult(result.value.originalLink, result.value.message);
+                            } else {
+                                failedLinks.push({ link: result.value.originalLink, message: result.value.message });
+                            }
+                        } else {
+                            failedLinks.push({ link: 'Unknown', message: 'An unhandled error occurred.' });
+                        }
+                    });
+
+                    loadingIndicator.classList.add('hidden');
+                    processButton.classList.remove('hidden');
+                    stopButton.classList.add('hidden');
+                    clearButton.classList.remove('hidden');
+                    abortController = null;
+                    resultsDiv.classList.remove('hidden');
+                    
+                    if (failedLinks.length > 0) {
+                        viewFailedButton.classList.remove('hidden');
+                    }
+
+                    const workingLinksCount = resultsList.children.length;
+                    showMessage(`Check complete. ${workingLinksCount} link(s) are working.`, 'bg-blue-100 text-blue-700 border border-blue-200');
+                }, 0);
+            });
+
+            stopButton.addEventListener('click', () => {
+                if (abortController) {
+                    abortController.abort();
+                }
+                loadingIndicator.classList.add('hidden');
+                processButton.classList.remove('hidden');
+                stopButton.classList.add('hidden');
+                clearButton.classList.remove('hidden');
+                showMessage('Processing stopped.', 'bg-yellow-100 text-yellow-700 border border-yellow-200');
+            });
+
+            clearButton.addEventListener('click', () => {
+                linksInput.value = '';
+                resultsList.innerHTML = '';
+                failedResultsList.innerHTML = '';
+                failedLinks = [];
+                resultsDiv.classList.add('hidden');
+                viewFailedButton.classList.add('hidden');
+                messageBox.classList.add('hidden');
+            });
+
+            viewFailedButton.addEventListener('click', () => {
+                failedResultsList.innerHTML = '';
+                failedLinks.forEach(item => {
+                    showFailedResult(item.link, item.message);
+                });
+                failureModal.style.display = 'block';
+            });
+
+            closeButton.addEventListener('click', () => {
+                failureModal.style.display = 'none';
+            });
+
+            window.addEventListener('click', (event) => {
+                if (event.target == failureModal) {
+                    failureModal.style.display = 'none';
+                }
+            });
+
+            function formatRemainingTime(expDate) {
+                if (isNaN(expDate)) {
+                    return "N/A";
+                }
+
+                const currentTime = Math.floor(Date.now() / 1000);
+                const remainingSeconds = expDate - currentTime;
+
+                if (remainingSeconds <= 0) {
+                    return "Expired";
+                }
+
+                const oneDay = 86400;
+                const oneMonth = 2592000;
+                const oneYear = 31536000;
+
+                const years = Math.floor(remainingSeconds / oneYear);
+                const months = Math.floor((remainingSeconds % oneYear) / oneMonth);
+                const days = Math.floor((remainingSeconds % oneMonth) / oneDay);
+
+                const parts = [];
+                if (years > 0) parts.push(`${years} year${years > 1 ? 's' : ''}`);
+                if (months > 0) parts.push(`${months} month${months > 1 ? 's' : ''}`);
+                if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
+
+                if (parts.length === 0) {
+                    return "Less than 1 day";
+                }
+
+                return parts.join(', ');
+            }
+        });
+    </script>
+</body>
+</html>
